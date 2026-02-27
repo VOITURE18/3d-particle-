@@ -19,9 +19,10 @@
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 2rem; box-sizing: border-box; }
         .pointer-events-auto { pointer-events: auto; }
         
-        /* Video feed feedback */
+        /* Video feed feedback - Made noticeably larger for better visibility */
         #video-feedback {
-            position: absolute; bottom: 20px; right: 20px; width: 160px; height: 120px;
+            position: absolute; bottom: 20px; right: 20px; 
+            width: 260px; height: 195px; /* Increased from 160x120 */
             border-radius: 12px; overflow: hidden; border: 2px solid rgba(255,255,255,0.2);
             box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 20; background: #000;
             transform: scaleX(-1); /* Mirror */
@@ -79,7 +80,7 @@
     <!-- UI Overlay -->
     <div id="ui-layer">
         <div class="flex justify-end items-start">
-            <div class="glass-panel px-4 py-2 text-right">
+            <div class="glass-panel px-4 py-2 text-right shadow-lg">
                 <p id="status" class="text-sm font-semibold text-yellow-400 animate-pulse">Waiting for Hand...</p>
             </div>
         </div>
@@ -272,7 +273,7 @@
             requestAnimationFrame(animateThreeJS);
 
             // Double smoothed rotation based on hand tracking. 
-            // Input is already smoothed, so we can make this snappier (0.1 instead of 0.05)
+            // Input is already smoothed, so we can make this snappier (0.1)
             particles.rotation.y += (targetRotation.y - particles.rotation.y) * 0.1;
             particles.rotation.x += (targetRotation.x - particles.rotation.x) * 0.1;
 
@@ -366,8 +367,9 @@
                 const rawHandY = landmarks[0].y;
                 
                 // Exponential Moving Average (EMA) to filter out jittery hand movements
-                smoothedHandX += (rawHandX - smoothedHandX) * 0.3; // Lower value = smoother but more delayed
-                smoothedHandY += (rawHandY - smoothedHandY) * 0.3;
+                // Lowered from 0.3 to 0.2 to give buttery smooth movement even with 720p resolution
+                smoothedHandX += (rawHandX - smoothedHandX) * 0.2; 
+                smoothedHandY += (rawHandY - smoothedHandY) * 0.2;
 
                 // Map smoothed coordinates to rotation
                 targetRotation.y = (smoothedHandX - 0.5) * Math.PI * 2;
@@ -401,7 +403,7 @@
                 const ringTip = landmarks[16];
                 const pinkyTip = landmarks[20];
                 
-                // Lowered the distance threshold from 0.25 to 0.18 for a stricter "fist" calculation
+                // Distance threshold for a stricter "fist" calculation
                 const isFist = calculateDistance(indexTip, wrist) < 0.18 &&
                                calculateDistance(middleTip, wrist) < 0.18 &&
                                calculateDistance(pinkyTip, wrist) < 0.18;
@@ -436,4 +438,62 @@
         }
 
         async function initHandTracking() {
-            const hands = n
+            const hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }});
+            
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                // AI Lock-on logic: Slightly lower detection so it finds your hand fast
+                minDetectionConfidence: 0.7, 
+                // Much higher tracking confidence so it grips the hand tight and ignores background noise
+                minTrackingConfidence: 0.85 
+            });
+            
+            hands.onResults(onResults);
+
+            const cameraUtil = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                },
+                // INCREASED SENSOR RESOLUTION: 720p HD tracking gives the AI WAY more data to track smoothly
+                width: 1280,
+                height: 720
+            });
+            
+            await cameraUtil.start();
+        }
+
+        // --- APP INITIALIZATION --- //
+        document.getElementById('start-btn').addEventListener('click', () => {
+            const btn = document.getElementById('start-btn');
+            const loadingText = document.getElementById('loading-text');
+            
+            btn.classList.add('hidden');
+            loadingText.classList.remove('hidden');
+
+            // Initialize ThreeJS immediately
+            initThreeJS();
+
+            // Initialize Camera & AI
+            initHandTracking().then(() => {
+                // Fade out overlay
+                const overlay = document.getElementById('overlay');
+                overlay.style.opacity = '0';
+                setTimeout(() => {
+                    overlay.style.display = 'none';
+                }, 500);
+            }).catch(err => {
+                console.error(err);
+                loadingText.innerText = "Camera access denied or error occurred. Please ensure you have a webcam.";
+                loadingText.classList.remove('animate-pulse');
+                loadingText.classList.add('text-red-400');
+            });
+        });
+
+    </script>
+</body>
+</html>
+
+
